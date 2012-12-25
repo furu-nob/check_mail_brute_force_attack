@@ -1,0 +1,171 @@
+#!/bin/sh
+#
+# ## Plugin for Nagios to monitor the vpopmail quota
+# ## Written by Nobuyuki Furuyama
+#
+#
+# ## You are free to use this script under the terms of the Gnu Public License.
+# ## I make no guarantee as to whether this will harm anything, much less work
+# ## - use at your own risk.
+#
+#
+# Usage: ./check_mail_brute_force_attack -w <warn> -c <crit>
+#
+# ## Description:
+#
+# You most write path to CUT_MAILLOG
+#
+# grep "system password fail" or "system user not found" from maillog at 10 minutes ago. [/home/anaheim/scripts/cut_maillog_by_mins_ago.sh]
+#
+# e.g.
+# Add this line to /usr/local/nagios/etc/nrpe.cfg . 
+# command[check_mail_attack]=sudo /usr/local/nagios/libexec/check_vquota -w 10 -c 15
+# Warning -> 1times / 1min
+# Critical -> 1.5times / 1min
+#
+# ## Output:
+#
+# The plugin prints "ok" or either "warning" or "critical"
+#
+# Exit Codes
+# 0 OK
+# 1 Warning
+# 2 Critical
+# 3 Unknown  Invalid command line arguments or could not determine used space
+
+PROGNAME=`basename $0`
+VERSION="0.01"
+AUTHOR="(c) 2012 Nobukuki Furuyama"
+
+# settings
+CUT_MAILLOG='/usr/local/nagios/libexec/cut_maillog_by_mins_ago.sh'            # Input your path to vuserinfo
+
+# Exit codes
+STATE_OK=0
+STATE_WARNING=1
+STATE_CRITICAL=2
+STATE_UNKNOWN=3
+STATE_DEPENDENT=4
+
+if [ ! -x $CUT_MAILLOG ] ; then echo "You don't done $VUSERINFO" >&2 ; exit $STATE_UNKNOWN ; fi
+
+print_version() {
+    echo "$PROGNAME $VERSION $AUTHOR"
+    echo ""
+}
+
+print_usage() {
+    echo "Usage: $PROGNAME -w <warn> -c <crit> [-h|--help] {-V|--version]"; echo ""
+    echo "  -h, --help"; echo "          print the help message and exit"
+    echo "  -V, --version"; echo "          print version and exit"
+    echo "  -c,"; echo "          Input Critical value"; echo "          Inputs it by percent. c > w"
+    echo "  -w,"; echo "          Input Warning value";echo "          Inputs it by percent. c > w"
+}
+print_help() {
+    print_version	
+    echo ""
+    echo "Plugin for Nagios to check mail Brute force attack"
+    echo ""
+    print_usage
+    echo ""
+}
+
+exitstatus=$STATE_WARNING #default
+
+if [ -z "$1" ]
+then
+        print_usage
+        exit  $exitstatus
+fi
+
+# getopt
+TEMP=`getopt -o hVw:c: --long help,version -n 'check_mail_brute_force_attack' -- "$@"`
+
+if [ $? != 0 ] ; then echo "Terminating..." >&2 ; exit $exitstatus ; fi
+
+# Note the quotes around `$TEMP': they are essential!
+eval set -- "$TEMP"
+
+while true ; do
+    case "$1" in
+        -h|--help) 
+            print_help
+            shift
+            exit $STATE_OK ;;
+        -V|--version)
+            print_version
+            shift                               # If you don't get value "shift"
+            exit $STATE_OK ;;
+        -w)
+            warn=$2 ; shift 2 ;;                # If you get value "shift 2"
+        -c)
+            crit=$2 ; shift 2 ;;
+		--)
+            shift ; break ;;
+        
+        *) echo "Internal error!" ; exit $exitstatus ;;
+    esac
+done
+for arg
+do
+        echo "Unkown option"; print_usage ; exit $exitstatus
+done
+
+OKIPADDR=""
+WARNIPADDR=""
+CRITIPADDR=""
+PREVIPADDR=""
+
+# Value check
+if [ "$crit" -le "$warn" ]; then
+        echo "\$crit=$crit => warn =< crit"
+        exit $exitstatus
+fi
+
+COUNT_MAILLOG=`$CUT_MAILLOG | sed -e "s/^.*://" | sort | uniq -c`
+
+#echo $COUNT_MAILLOG
+
+IFS_back=$IFS
+IFS="
+"
+for ATTACK_LINE in $COUNT_MAILLOG 
+do
+		ATTACK_COUNT=`echo $ATTACK_LINE | awk '{print $1}'`
+        ATTACK_IP=`echo $ATTACK_LINE | awk '{print $2}'`
+        if [ "$ATTACK_COUNT" -ge "$crit" ]
+            then
+                CRITIPADDR=$CRITIPADDR:$ATTACK_IP\($ATTACK_COUNT\)
+                continue 
+        fi
+        if [ "$ATTACK_COUNT" -ge "$warn" ]
+                then
+                    WARNIPADDR=$WARNIPADDR:$ATTACK_IP\($ATTACK_COUNT\)
+                    continue
+        fi
+        if [ "$ATTACK_COUNT" -lt "$warn" ]
+                then
+                    OKIPADDR=$OKIPADDR:$ATTACK_IP\($ATTACK_COUNT\)
+                    continue
+        fi
+done
+
+IFS=$IFS_back
+
+if [ $CRITIPADDR ]; then
+    mesg="CRITICAL - W/$warn:C/$crit -"
+    exitstatus=$STATE_CRITICAL
+elif [ $WARNIPADDR ]; then
+    mesg="WARNING - W/$warn:C/$crit -"
+    exitstatus=$STATE_WARNING
+else
+    mesg="OK - W/$warn:C/$crit -"
+    exitstatus=$STATE_OK
+fi
+msgs="CRITIPADDR $CRITIPADDR / WARNIPADDR $WARNIPADDR \nOKIPADDR $OKIPADDR"
+echo -e "$mesg $msgs"
+exit $exitstatus
+#
+# # vim: autoindent number ts=4
+
+
