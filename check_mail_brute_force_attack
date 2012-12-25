@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# ## Plugin for Nagios to monitor the vpopmail quota
+# ## Plugin for Nagios to monitor mail brute force attack.
 # ## Written by Nobuyuki Furuyama
 #
 #
@@ -19,7 +19,7 @@
 #
 # e.g.
 # Add this line to /usr/local/nagios/etc/nrpe.cfg . 
-# command[check_mail_attack]=sudo /usr/local/nagios/libexec/check_vquota -w 10 -c 15
+# command[check_mail_attack]=sudo /usr/local/nagios/libexec/check_mail_brute_force_attack -w 10 -c 15
 # Warning -> 1times / 1min
 # Critical -> 1.5times / 1min
 #
